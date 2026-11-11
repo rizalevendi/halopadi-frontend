@@ -1,5 +1,6 @@
 import React from "react";
 import { Sparkles, ScanLine, BookOpen, ShieldCheck, Activity, CheckCircle2 } from "lucide-react";
+import sawahImg from "../assets/sawah.jpg";
 
 const HeroSection = () => {
   return (
@@ -72,9 +73,9 @@ const HeroSection = () => {
               </div>
 
 {/* MENGGANTI GAMBAR DARI INTERNET DENGAN GAMBAR LOKAL ANDA */}
-              <div className="relative rounded-xl overflow-hidden h-40 sm:h-44 bg-slate-100">
+<div className="relative rounded-xl overflow-hidden h-40 sm:h-44 bg-slate-100">
                 <img
-                  src="/src/assets/sawah.jpg" 
+                  src={sawahImg} 
                   alt="Hamparan Daun Padi"
                   className="w-full h-full object-cover"
                 />

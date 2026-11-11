@@ -1,5 +1,7 @@
 import React, { useState } from "react";
 import { Sprout, Menu, X, ScanLine } from "lucide-react";
+// 1. Impor gambar di bagian atas
+import logoImg from "../assets/logo.jpg";
 
 const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -12,17 +14,17 @@ const Navbar = () => {
     { name: "Teknologi", href: "#teknologi" }
   ];
 
-return (
+  return (
     <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-200/80">
       <div className="max-w-6xl mx-auto px-4 sm:px-6">
         <div className="flex items-center justify-between h-14 sm:h-16">
           
           {/* BAGIAN LOGO */}
           <a href="#beranda" className="flex items-center gap-2.5 group">
-            {/* Opsi A: Menggunakan Gambar/Logo Sendiri */}
             <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center overflow-hidden bg-emerald-50 border border-emerald-200 shadow-sm">
+              {/* 2. Panggil variabel logoImg dengan kurung kurawal */}
               <img 
-                src="/src/assets/logo.jpg" 
+                src={logoImg} 
                 alt="Logo HaloPadi" 
                 className="w-full h-full object-cover"
               />
