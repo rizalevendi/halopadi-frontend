@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   UploadCloud,
   ScanLine,
@@ -13,6 +13,7 @@ import {
 import { DISEASES_DATA } from "../data/padiData";
 
 const API_URL = "https://rizalduro123-halopadi-backend.hf.space/predict";
+const HEALTH_URL = "https://rizalduro123-halopadi-backend.hf.space/";
 
 const DetectionSection = () => {
   const [selectedFile, setSelectedFile] = useState(null);
@@ -21,6 +22,11 @@ const DetectionSection = () => {
   const [errorMsg, setErrorMsg] = useState("");
   const [result, setResult] = useState(null);
   const fileInputRef = useRef(null);
+
+  // Bangunkan server Hugging Face di latar belakang saat halaman dibuka
+  useEffect(() => {
+    fetch(HEALTH_URL, { mode: "no-cors" }).catch(() => {});
+  }, []);
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
@@ -33,8 +39,10 @@ const DetectionSection = () => {
 
     if (!file) return;
 
-    const validTypes = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
-    if (!validTypes.includes(file.type)) {
+    const isImageMime = file.type && file.type.startsWith("image/");
+    const isImageExt = /\.(jpe?g|png|webp|heic|heif)$/i.test(file.name || "");
+
+    if (!isImageMime && !isImageExt) {
       setSelectedFile(null);
       setPreviewUrl(null);
       setErrorMsg(
@@ -64,11 +72,57 @@ const DetectionSection = () => {
     }
   };
 
-  const runFallbackSimulation = (diseaseTarget) => {
-    const chosen =
-      diseaseTarget ||
-      DISEASES_DATA[Math.floor(Math.random() * DISEASES_DATA.length)];
+  // Kompres dan ubah foto kamera HP beresolusi tinggi ke JPEG standar (maks 640px)
+  const prepareImageForUpload = (file) => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(file);
 
+      img.onload = () => {
+        URL.revokeObjectURL(objectUrl);
+        const maxSide = 640;
+        let { width, height } = img;
+
+        if (width > maxSide || height > maxSide) {
+          if (width > height) {
+            height = Math.round((height * maxSide) / width);
+            width = maxSide;
+          } else {
+            width = Math.round((width * maxSide) / height);
+            height = maxSide;
+          }
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+
+        canvas.toBlob(
+          (blob) => {
+            if (blob) {
+              resolve(blob);
+            } else {
+              resolve(file);
+            }
+          },
+          "image/jpeg",
+          0.88
+        );
+      };
+
+      img.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        resolve(file);
+      };
+
+      img.src = objectUrl;
+    });
+  };
+
+  const runSampleSimulation = (diseaseTarget) => {
+    const chosen = diseaseTarget || DISEASES_DATA[0];
     const mainConf = 97.4;
     const rem = +(100 - mainConf).toFixed(2);
     const probabilities = {};
@@ -108,13 +162,14 @@ const DetectionSection = () => {
     try {
       if (selectedFile.isSample) {
         await new Promise((r) => setTimeout(r, 650));
-        setResult(runFallbackSimulation(selectedFile.sampleData));
+        setResult(runSampleSimulation(selectedFile.sampleData));
         setIsLoading(false);
         return;
       }
 
+      const uploadBlob = await prepareImageForUpload(selectedFile);
       const formData = new FormData();
-      formData.append("file", selectedFile);
+      formData.append("file", uploadBlob, "leaf_upload.jpg");
 
       const response = await fetch(API_URL, {
         method: "POST",
@@ -122,24 +177,22 @@ const DetectionSection = () => {
       });
 
       if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.detail || "Gagal memproses gambar pada server.");
+        const rawText = await response.text();
+        let detailMsg = `Server merespons status ${response.status}.`;
+        try {
+          const errJson = JSON.parse(rawText);
+          if (errJson.detail) detailMsg = errJson.detail;
+        } catch (_) {}
+        throw new Error(detailMsg);
       }
 
       const data = await response.json();
       setResult(data);
     } catch (err) {
-      // Fallback simulasi otomatis jika backend lokal belum aktif
-      const fileNameLower = (selectedFile.name || "").toLowerCase();
-      let matched = DISEASES_DATA[0];
-      if (fileNameLower.includes("brown") || fileNameLower.includes("cokelat")) {
-        matched = DISEASES_DATA[1];
-      } else if (fileNameLower.includes("blast") || fileNameLower.includes("blas")) {
-        matched = DISEASES_DATA[2];
-      } else if (fileNameLower.includes("healthy") || fileNameLower.includes("sehat")) {
-        matched = DISEASES_DATA[3];
-      }
-      setResult(runFallbackSimulation(matched));
+      setResult(null);
+      setErrorMsg(
+        `Gagal terhubung ke server AI (${err.message}). Jika server baru saja aktif, tunggu sekitar 10 detik lalu tekan tombol Deteksi lagi.`
+      );
     } finally {
       setIsLoading(false);
     }
@@ -215,7 +268,7 @@ const DetectionSection = () => {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/jpeg,image/png,image/webp"
+                accept="image/*"
                 onChange={handleFileChange}
                 className="hidden"
               />
@@ -242,7 +295,7 @@ const DetectionSection = () => {
                     Klik untuk memilih foto daun padi
                   </p>
                   <p className="text-[11px] text-slate-500">
-                    Mendukung format gambar JPG atau PNG
+                    Mendukung foto kamera langsung, JPG, atau PNG
                   </p>
                 </div>
               )}
