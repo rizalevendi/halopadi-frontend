@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef } from "react";
 import {
   UploadCloud,
   ScanLine,
@@ -10,10 +10,61 @@ import {
   FileWarning,
   Sparkles
 } from "lucide-react";
-import { DISEASES_DATA } from "../data/padiData";
+import { Client, handle_file } from "@gradio/client";
 
-const API_URL = "https://rizalduro123-halopadi-backend.hf.space/predict";
-const HEALTH_URL = "https://rizalduro123-halopadi-backend.hf.space/";
+const HF_SPACE_ID = "rizalduro123/halopadi-backend";
+
+// Kompresi & koreksi orientasi foto kamera/galeri HP sebelum diunggah
+const compressImageForMobile = (file, maxDimension = 800, quality = 0.85) => {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(file);
+
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      let { width, height } = img;
+
+      if (width > maxDimension || height > maxDimension) {
+        if (width > height) {
+          height = Math.round((height * maxDimension) / width);
+          width = maxDimension;
+        } else {
+          width = Math.round((width * maxDimension) / height);
+          height = maxDimension;
+        }
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, width, height);
+
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            reject(new Error("Gagal memproses kompresi gambar."));
+            return;
+          }
+          const compressedFile = new File([blob], "daun_padi.jpg", {
+            type: "image/jpeg",
+            lastModified: Date.now()
+          });
+          resolve(compressedFile);
+        },
+        "image/jpeg",
+        quality
+      );
+    };
+
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Berkas gambar tidak dapat dibaca."));
+    };
+
+    img.src = objectUrl;
+  });
+};
 
 const DetectionSection = () => {
   const [selectedFile, setSelectedFile] = useState(null);
@@ -22,11 +73,6 @@ const DetectionSection = () => {
   const [errorMsg, setErrorMsg] = useState("");
   const [result, setResult] = useState(null);
   const fileInputRef = useRef(null);
-
-  // Bangunkan server Hugging Face di latar belakang saat halaman dibuka
-  useEffect(() => {
-    fetch(HEALTH_URL, { mode: "no-cors" }).catch(() => {});
-  }, []);
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
@@ -39,27 +85,17 @@ const DetectionSection = () => {
 
     if (!file) return;
 
-    const isImageMime = file.type && file.type.startsWith("image/");
-    const isImageExt = /\.(jpe?g|png|webp|heic|heif)$/i.test(file.name || "");
-
-    if (!isImageMime && !isImageExt) {
+    if (file.type && !file.type.startsWith("image/")) {
       setSelectedFile(null);
       setPreviewUrl(null);
       setErrorMsg(
-        "Format berkas ditolak! Harap unggah foto daun padi berformat .JPG atau .PNG."
+        "Format berkas ditolak! Harap unggah foto daun padi berformat gambar (JPG/PNG)."
       );
       return;
     }
 
     setSelectedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
-  };
-
-  const handleSampleSelect = (disease) => {
-    setErrorMsg("");
-    setSelectedFile({ name: `${disease.id}.jpg`, isSample: true, sampleData: disease });
-    setPreviewUrl(disease.image);
-    setResult(null);
   };
 
   const handleReset = () => {
@@ -72,84 +108,6 @@ const DetectionSection = () => {
     }
   };
 
-  // Kompres dan ubah foto kamera HP beresolusi tinggi ke JPEG standar (maks 640px)
-  const prepareImageForUpload = (file) => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      const objectUrl = URL.createObjectURL(file);
-
-      img.onload = () => {
-        URL.revokeObjectURL(objectUrl);
-        const maxSide = 640;
-        let { width, height } = img;
-
-        if (width > maxSide || height > maxSide) {
-          if (width > height) {
-            height = Math.round((height * maxSide) / width);
-            width = maxSide;
-          } else {
-            width = Math.round((width * maxSide) / height);
-            height = maxSide;
-          }
-        }
-
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, width, height);
-
-        canvas.toBlob(
-          (blob) => {
-            if (blob) {
-              resolve(blob);
-            } else {
-              resolve(file);
-            }
-          },
-          "image/jpeg",
-          0.88
-        );
-      };
-
-      img.onerror = () => {
-        URL.revokeObjectURL(objectUrl);
-        resolve(file);
-      };
-
-      img.src = objectUrl;
-    });
-  };
-
-  const runSampleSimulation = (diseaseTarget) => {
-    const chosen = diseaseTarget || DISEASES_DATA[0];
-    const mainConf = 97.4;
-    const rem = +(100 - mainConf).toFixed(2);
-    const probabilities = {};
-
-    DISEASES_DATA.forEach((d, idx) => {
-      if (d.id === chosen.id) {
-        probabilities[d.name] = mainConf;
-      } else {
-        probabilities[d.name] = +(rem / 3 + (idx === 0 ? 0.02 : -0.01)).toFixed(2);
-      }
-    });
-
-    return {
-      class_key: chosen.id,
-      class_name: chosen.name,
-      latin_name: chosen.latin,
-      status:
-        chosen.id === "Healthy" ? "Tanaman Sehat" : "Terdeteksi Gejala Penyakit",
-      severity: chosen.id === "Healthy" ? "Aman" : "Perlu Penanganan",
-      confidence: mainConf,
-      response_time_ms: 142.5,
-      description: chosen.symptoms,
-      recommendations: chosen.treatment,
-      probabilities
-    };
-  };
-
   const handleDetect = async () => {
     if (!selectedFile) {
       setErrorMsg("Silakan pilih atau unggah foto daun padi terlebih dahulu.");
@@ -160,38 +118,31 @@ const DetectionSection = () => {
     setErrorMsg("");
 
     try {
-      if (selectedFile.isSample) {
-        await new Promise((r) => setTimeout(r, 650));
-        setResult(runSampleSimulation(selectedFile.sampleData));
-        setIsLoading(false);
-        return;
+      let fileToUpload = selectedFile;
+      try {
+        fileToUpload = await compressImageForMobile(selectedFile, 800, 0.85);
+      } catch {
+        fileToUpload = selectedFile;
       }
 
-      const uploadBlob = await prepareImageForUpload(selectedFile);
-      const formData = new FormData();
-      formData.append("file", uploadBlob, "leaf_upload.jpg");
-
-      const response = await fetch(API_URL, {
-        method: "POST",
-        body: formData
+      const client = await Client.connect(HF_SPACE_ID);
+      const prediction = await client.predict("/predict", {
+        img: handle_file(fileToUpload)
       });
 
-      if (!response.ok) {
-        const rawText = await response.text();
-        let detailMsg = `Server merespons status ${response.status}.`;
-        try {
-          const errJson = JSON.parse(rawText);
-          if (errJson.detail) detailMsg = errJson.detail;
-        } catch (_) {}
-        throw new Error(detailMsg);
+      const data = prediction.data?.[2];
+      if (!data || data.error) {
+        throw new Error(
+          data?.error || "Server AI tidak mengembalikan hasil diagnosis."
+        );
       }
 
-      const data = await response.json();
       setResult(data);
     } catch (err) {
       setResult(null);
       setErrorMsg(
-        `Gagal terhubung ke server AI (${err.message}). Jika server baru saja aktif, tunggu sekitar 10 detik lalu tekan tombol Deteksi lagi.`
+        err.message ||
+          "Gagal terhubung ke server AI. Pastikan status Space aktif dan coba tekan Deteksi kembali."
       );
     } finally {
       setIsLoading(false);
@@ -292,10 +243,10 @@ const DetectionSection = () => {
                     <UploadCloud className="w-5 h-5" />
                   </div>
                   <p className="text-xs sm:text-sm font-semibold text-slate-800">
-                    Klik untuk memilih foto daun padi
+                    Klik untuk memilih atau memfoto daun padi
                   </p>
                   <p className="text-[11px] text-slate-500">
-                    Mendukung foto kamera langsung, JPG, atau PNG
+                    Mendukung kamera langsung maupun galeri foto (JPG/PNG)
                   </p>
                 </div>
               )}
