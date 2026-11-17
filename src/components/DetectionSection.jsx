@@ -13,6 +13,7 @@ import {
 import { Client, handle_file } from "@gradio/client";
 
 const HF_SPACE_ID = "rizalduro123/halopadi-backend";
+const HF_TOKEN = import.meta.env.VITE_HF_TOKEN;
 
 // Kompresi & koreksi orientasi foto kamera/galeri HP sebelum diunggah
 const compressImageForMobile = (file, maxDimension = 800, quality = 0.85) => {
@@ -125,7 +126,9 @@ const DetectionSection = () => {
         fileToUpload = selectedFile;
       }
 
-      const client = await Client.connect(HF_SPACE_ID);
+      const client = await Client.connect(HF_SPACE_ID, {
+        hf_token: HF_TOKEN
+      });
       const prediction = await client.predict("/predict", {
         img: handle_file(fileToUpload)
       });
